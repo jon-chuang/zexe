@@ -446,14 +446,14 @@ macro_rules! impl_field_mul_assign {
                 no_carry = false;
             } else if ((P::MODULUS.0[$limbs-1] << 1) + 1) & !(0u64) == 0 {
                 let mut all_bits_set = true;
-                let mut x = 0;
                 for i in 1..$limbs {
                     if P::MODULUS.0[$limbs-1-i] & !(0u64) == 0 {
                         all_bits_set &= true;
                     } else { all_bits_set = false; }
                 }
-                no_carry = !bits_set;
+                no_carry = !all_bits_set;
             }
+            // No carry optimisation applied to CIOS
             if no_carry {
                 let mut r = [0u64; $limbs];
                 let mut carry1 = 0u64;
@@ -471,6 +471,7 @@ macro_rules! impl_field_mul_assign {
                 }
                 (self.0).0 = r;
                 self.reduce();
+            // Alternative implementation
             } else {
                 let mut r = [0u64; $limbs*2];
 

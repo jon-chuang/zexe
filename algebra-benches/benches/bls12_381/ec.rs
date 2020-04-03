@@ -1,13 +1,11 @@
 mod g1 {
-    use algebra::UniformRand;
-    use rand::SeedableRng;
-    use rand_xorshift::XorShiftRng;
-    use std::ops::AddAssign;
-
     use algebra::{
         bls12_381::{Fr, G1Affine, G1Projective as G1},
-        ProjectiveCurve,
+        ProjectiveCurve, UniformRand,
     };
+    use core::ops::AddAssign;
+    use rand::SeedableRng;
+    use rand_xorshift::XorShiftRng;
 
     #[bench]
     fn bench_g1_rand(b: &mut ::test::Bencher) {
@@ -47,7 +45,7 @@ mod g1 {
         let mut count = 0;
         b.iter(|| {
             let mut tmp = v[count].0;
-            tmp.add_assign(&v[count].1);
+            for i in 0..1000 { tmp.add_assign(&v[i].1); }
             count = (count + 1) % SAMPLES;
             tmp
         });
@@ -66,7 +64,7 @@ mod g1 {
         let mut count = 0;
         b.iter(|| {
             let mut tmp = v[count].0;
-            tmp.add_assign_mixed(&v[count].1);
+            for i in 0..1000 { tmp.add_assign_mixed(&v[i].1); }
             count = (count + 1) % SAMPLES;
             tmp
         });
@@ -85,7 +83,7 @@ mod g1 {
         let mut count = 0;
         b.iter(|| {
             let mut tmp = v[count].0;
-            tmp.double_in_place();
+            for i in 0..1000 { tmp.double_in_place(); }
             count = (count + 1) % SAMPLES;
             tmp
         });
@@ -93,15 +91,13 @@ mod g1 {
 }
 
 mod g2 {
-    use algebra::UniformRand;
+    use algebra::{
+        bls12_377::{Fr, G2Affine, G2Projective as G2},
+        ProjectiveCurve, UniformRand,
+    };
+    use core::ops::AddAssign;
     use rand::SeedableRng;
     use rand_xorshift::XorShiftRng;
-    use std::ops::AddAssign;
-
-    use algebra::{
-        bls12_381::{Fr, G2Affine, G2Projective as G2},
-        ProjectiveCurve,
-    };
 
     #[bench]
     fn bench_g2_rand(b: &mut ::test::Bencher) {

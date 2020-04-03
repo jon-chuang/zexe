@@ -164,7 +164,7 @@ fn bench_fq_mul_assign(b: &mut ::test::Bencher) {
     let mut count = 0;
     b.iter(|| {
         let mut tmp = v[count].0;
-        tmp.mul_assign(&v[count].1);
+        for i in 0..1000 { tmp.mul_assign(&v[i].1); }
         count = (count + 1) % SAMPLES;
         tmp
     });
@@ -181,7 +181,7 @@ fn bench_fq_double(b: &mut ::test::Bencher) {
     let mut count = 0;
     b.iter(|| {
         let mut tmp = v[count];
-        tmp.double_in_place();
+        for i in 0..1000 { tmp.double_in_place(); }
         count = (count + 1) % SAMPLES;
         tmp
     });
@@ -198,7 +198,7 @@ fn bench_fq_square(b: &mut ::test::Bencher) {
     let mut count = 0;
     b.iter(|| {
         let mut tmp = v[count];
-        tmp.square_in_place();
+        for i in 0..1000 { tmp.square_in_place(); }
         count = (count + 1) % SAMPLES;
         tmp
     });

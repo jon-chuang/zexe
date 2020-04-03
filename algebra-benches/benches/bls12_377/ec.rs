@@ -45,7 +45,7 @@ mod g1 {
         let mut count = 0;
         b.iter(|| {
             let mut tmp = v[count].0;
-            tmp.add_assign(&v[count].1);
+            for i in 0..1000 { tmp.add_assign(&v[i].1); }
             count = (count + 1) % SAMPLES;
             tmp
         });
@@ -64,7 +64,7 @@ mod g1 {
         let mut count = 0;
         b.iter(|| {
             let mut tmp = v[count].0;
-            tmp.add_assign_mixed(&v[count].1);
+            for i in 0..1000 { tmp.add_assign_mixed(&v[i].1); }
             count = (count + 1) % SAMPLES;
             tmp
         });
@@ -83,7 +83,7 @@ mod g1 {
         let mut count = 0;
         b.iter(|| {
             let mut tmp = v[count].0;
-            tmp.double_in_place();
+            for i in 0..1000 { tmp.double_in_place(); }
             count = (count + 1) % SAMPLES;
             tmp
         });

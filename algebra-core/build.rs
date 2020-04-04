@@ -87,60 +87,57 @@ fn generate_macro_string (max_limbs:usize) -> std::string::String {
     let mut macro_string = String::from(
     "macro_rules! generate_asm_mul {
         ($limbs:expr) => {
-            match $limbs {
+            fn mul_asm (
+                a: [u64; $limbs],
+                b: [u64; $limbs],
+                modulus: [u64; $limbs],
+                inverse: u64
+            ) -> [u64; $limbs] {
+                let result = match $limbs {
     ");
     for i in 2..(max_limbs+1) {
         let limb_specialisation = format!(
     "           {} => {{
-            }},
+                    const ZERO: u64 = 0;
+                    let mut result = MaybeUninit::<[u64; $limbs]>::uninit();
+                    unsafe {{
+                        asm!({}
+                            :
+                            : \"r\"(result.as_mut_ptr()),
+                              \"r\"(&a), \"r\"(&b),
+                              \"m\"(ZERO),
+                              \"m\"(modulus[0]),
+                              \"m\"(modulus[1]),
+                              \"m\"(modulus[2]),
+                              \"m\"(modulus[3]),
+                              \"m\"(inverse)
+                            : \"rdx\", \"rdi\", \"r8\", \"r9\", \"r10\", \"r11\", \"r12\", \"r13\", \"r14\", \"r15\", \"cc\", \"memory\"
+                            // : \"r\"(result.as_mut_ptr()),
+                            //   \"r\"(&a), \"r\"(&b), \"r\"(&modulus),
+                            //   \"m\"(ZERO),
+                            //   \"m\"(inverse)
+                            // : \"rax\", \"rbx\", \"rdx\", \"rds\", \"rdi\", \"cc\", \"memory\"
+                        );
+                    }}
+                    let r = unsafe {{ result.assume_init() }};
+                    r
+                }},
 
-    ", i);
+    ", i, asm_string);//generate_asm_string(i));
         macro_string = format!("{}{}", macro_string, limb_specialisation);
     }
     macro_string = format!("{}{}", macro_string,
-            "x => panic!(\"Unexpected invalid number of limbs {:?}\", x)
-        }
-");
-    for i in 2..(max_limbs+1) {
-        let function_string = format!(
-"
-fn mul_asm_{} (a: [u64; $limbs], b: [u64; $limbs]) -> [u64; $limbs] {{
-    const ZERO: u64 = 0;
-    let mut result = MaybeUninit::<[u64; $limbs]>::uninit();
-    unsafe {{
-        asm!({}
-            :
-            // : \"r\"(result.as_mut_ptr()),
-            //   \"r\"(&a), \"r\"(&b),
-            //   \"m\"(ZERO),
-            //   \"m\"(P::MODULUS.0[0]),
-            //   \"m\"(P::MODULUS.0[1]),
-            //   \"m\"(P::MODULUS.0[2]),
-            //   \"m\"(P::MODULUS.0[3]),
-            //   \"m\"(P::INV)
-            // : \"rdx\", \"rdi\", \"r8\", \"r9\", \"r10\", \"r11\", \"r12\", \"r13\", \"r14\", \"r15\", \"cc\", \"memory\"
-            : \"r\"(result.as_mut_ptr()),
-              \"r\"(&a), \"r\"(&b), \"r\"(&P::MODULUS.0),
-              \"m\"(ZERO),
-              \"m\"(P::INV)
-            : \"rax\", \"rbx\", \"rdx\", \"rds\", \"rdi\", \"cc\", \"memory\"
-        );
-    }}
-    let r = unsafe {{ result.assume_init() }};
-    r
-}}
-"             , i, ASM_STRING); //generate_asm_string(i));
-
-        macro_string = format!("{}{}", macro_string, function_string);
-    }
-    macro_string = format!("{}{}", macro_string, "
+            "_ => [0u64; $limbs]
+            };
+            result
+        };
     }
 }");
     macro_string
 }
 
 
-const ASM_STRING :&'static str = "
+const asm_string:&'static str = "
                             \"
                             // Assembly from Aztec's Barretenberg implementation, see
                             // <https://github.com/AztecProtocol/barretenberg/blob/master/src/barretenberg/fields/asm_macros.hpp>

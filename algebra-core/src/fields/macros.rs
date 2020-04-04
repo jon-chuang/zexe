@@ -455,13 +455,13 @@ macro_rules! impl_field_mul_assign {
             }
             let no_carry:bool = !(first_bit_set || all_bits_set);
 
-            let mul_asm = generate_asm_mul!($limbs);
+            generate_asm_mul!($limbs);
 
             // No-carry optimisation applied to CIOS
             if no_carry {
                 let mut r = [0u64; $limbs];
                 if $limbs == 4 {
-                    r = mul_asm((self.0).0, (other.0).0);
+                    r = mul_asm((self.0).0, (other.0).0, P::MODULUS.0, P::INV);
                 } else {
                     for i in 0..$limbs {
                         let mut carry1 = 0;

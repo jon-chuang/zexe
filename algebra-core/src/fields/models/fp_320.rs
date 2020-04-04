@@ -6,7 +6,6 @@ use core::{
     str::FromStr,
 };
 use num_traits::{One, Zero};
-use unroll::unroll_for_loops;
 
 use crate::{
     biginteger::{arithmetic as fa, BigInteger as _BigInteger, BigInteger320 as BigInteger},

@@ -12,6 +12,5 @@ use core::{
     str::FromStr,
 };
 use num_traits::{One, Zero};
-use unroll::unroll_for_loops;
 
 impl_Fp!(Fp832, Fp832Parameters, 13);

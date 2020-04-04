@@ -1,5 +1,9 @@
 macro_rules! impl_Fp {
     ($Fp:ident, $FpParameters:ident, $limbs:expr) => {
+        use std::mem::MaybeUninit;
+        use unroll::unroll_for_loops;
+        include!(concat!(env!("OUT_DIR"), "/assembly.rs"));
+
         pub trait $FpParameters: FpParameters<BigInt = BigInteger> {}
 
         #[derive(Derivative)]
@@ -443,7 +447,6 @@ macro_rules! impl_field_mul_assign {
         #[inline]
         #[unroll_for_loops]
         fn mul_assign(&mut self, other: &Self) {
-            use std::mem::MaybeUninit;
             // Checking the modulus at compile time
             let first_bit_set = P::MODULUS.0[$limbs - 1] >> 63 != 0;
             let mut all_bits_set = P::MODULUS.0[$limbs - 1] == !0 - (1 << 63);
@@ -452,365 +455,7 @@ macro_rules! impl_field_mul_assign {
             }
             let no_carry:bool = !(first_bit_set || all_bits_set);
 
-            let mul_asm = |
-                a: [u64; $limbs],
-                b: [u64; $limbs]
-            | -> [u64; $limbs] {
-                const ZERO: u64 = 0;
-                let mut result = MaybeUninit::<[u64; $limbs]>::uninit();
-                unsafe {
-                    asm!("
-                        movq 0($1), %rdx
-                        xorq %r8, %r8
-
-                        mulxq 0($2), %r13, %r14
-                        mulxq 8($2), %r8, %r9
-                        mulxq 16($2), %r15, %r10
-                        mulxq 24($2), %rdi, %r12
-
-                        movq %r13, %rdx
-                        mulxq $8, %rdx, %r11
-                        adcxq %r8, %r14
-                        adoxq %rdi, %r10
-                        adcxq %r9, %r15
-                        adoxq $3, %r12
-                        adcxq $3, %r10
-
-                        mulxq $4, %r8, %r9
-                        mulxq $5, %rdi, %r11
-                        adoxq %r8, %r13
-                        adcxq %rdi, %r14
-                        adoxq %r9, %r14
-                        adcxq %r11, %r15
-
-                        mulxq $6, %r8, %r9
-                        mulxq $7, %rdi, %r11
-                        adoxq %r8, %r15
-                        adcxq %rdi, %r10
-                        adoxq %r9, %r10
-                        adcxq %r11, %r12
-                        adoxq $3, %r12
-
-                        movq 8($1), %rdx
-
-                        mulxq 0($2), %r8, %r9
-                        mulxq 8($2), %rdi, %r11
-                        adcxq %r8, %r14
-                        adoxq %r9, %r15
-                        adcxq %rdi, %r15
-                        adoxq %r11, %r10
-
-                        mulxq 16($2), %r8, %r9
-                        mulxq 24($2), %rdi, %r13
-                        adcxq %r8, %r10
-                        adoxq %rdi, %r12
-                        adcxq %r9, %r12
-                        adoxq $3, %r13
-                        adcxq $3, %r13
-
-                        movq %r14, %rdx
-                        
-                        mulxq $8, %rdx, %r8
-                        mulxq $4, %r8, %r9
-                        mulxq $5, %rdi, %r11
-                        adoxq %r8, %r14
-                        adcxq %rdi, %r15
-                        adoxq %r9, %r15
-                        adcxq %r11, %r10
-
-                        mulxq $6, %r8, %r9
-                        mulxq $7, %rdi, %r11
-                        adoxq %r8, %r10
-                        adcxq %r9, %r12
-                        adoxq %rdi, %r12
-                        adcxq %r11, %r13
-                        adoxq $3, %r13
-
-                        movq 16($1), %rdx
-
-                        mulxq 0($2), %r8, %r9
-                        mulxq 8($2), %rdi, %r11
-                        adcxq %r8, %r15
-                        adoxq %r9, %r10
-                        adcxq %rdi, %r10
-                        adoxq %r11, %r12
-
-                        mulxq 16($2), %r8, %r9
-                        mulxq 24($2), %rdi, %r14
-                        adcxq %r8, %r12
-                        adoxq %r9, %r13
-                        adcxq %rdi, %r13
-                        adoxq $3, %r14
-                        adcxq $3, %r14
-
-                        movq %r15, %rdx
-
-                        mulxq $8, %rdx, %r8
-                        mulxq $4, %r8, %r9
-                        mulxq $5, %rdi, %r11
-                        adoxq %r8, %r15
-                        adcxq %r9, %r10
-                        adoxq %rdi, %r10
-                        adcxq %r11, %r12
-
-                        mulxq $6, %r8, %r9
-                        mulxq $7, %rdi, %r11
-                        adoxq %r8, %r12
-                        adcxq %r9, %r13
-                        adoxq %rdi, %r13
-                        adcxq %r11, %r14
-                        adoxq $3, %r14
-
-                        movq 24($1), %rdx
-
-                        mulxq 0($2), %r8, %r9
-                        mulxq 8($2), %rdi, %r11
-                        adcxq %r8, %r10
-                        adoxq %r9, %r12
-                        adcxq %rdi, %r12
-                        adoxq %r11, %r13
-
-                        mulxq 16($2), %r8, %r9
-                        mulxq 24($2), %rdi, %r15
-                        adcxq %r8, %r13
-                        adoxq %r9, %r14
-                        adcxq %rdi, %r14
-                        adoxq $3, %r15
-                        adcxq $3, %r15
-
-                        movq %r10, %rdx
-
-                        mulxq $8, %rdx, %r8
-                        mulxq $4, %r8, %r9
-                        mulxq $5, %rdi, %r11
-                        adoxq %r8, %r10
-                        adcxq %r9, %r12
-                        adoxq %rdi, %r12
-                        adcxq %r11, %r13
-
-                        mulxq $6, %r8, %r9
-                        mulxq $7, %rdi, %rdx
-                        adoxq %r8, %r13
-                        adcxq %r9, %r14
-                        adoxq %rdi, %r14
-                        adcxq %rdx, %r15
-                        adoxq $3, %r15
-
-                        movq %r12, 0($0)
-                        movq %r13, 8($0)
-                        movq %r14, 16($0)
-                        movq %r15, 24($0)
-                        "
-                        :
-                        : "r"(result.as_mut_ptr()),
-                          "r"(&a), "r"(&b),
-                          "m"(ZERO),
-                          "m"(P::MODULUS.0[0]),
-                          "m"(P::MODULUS.0[1]),
-                          "m"(P::MODULUS.0[2]),
-                          "m"(P::MODULUS.0[3]),
-                          "m"(P::INV)
-                        : "rdx", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "cc", "memory"
-                    );
-                }
-                let r = unsafe { result.assume_init() };
-                r
-
-            // #[inline(always)]
-            // let mul_asm = |
-            //     a: [u64; $limbs],
-            //     b: [u64; $limbs]
-            // | -> [u64; $limbs] {
-            //     const ZERO: u64 = 0;
-            //     let mut result = MaybeUninit::<[u64; $limbs]>::uninit();
-            //     unsafe {
-            //         asm!("
-            //             // Assembly from Aztec's Barretenberg implementation, see
-            //             // <https://github.com/AztecProtocol/barretenberg/blob/master/src/barretenberg/fields/asm_macros.hpp>
-            //             movq 0($1), %rdx
-            //             xorq %r8, %r8
-            //
-            //             mulxq 0($2), %r13, %r14
-            //             mulxq 8($2), %r8, %r9
-            //             mulxq 16($2), %r15, %r10
-            //             mulxq 24($2), %rdi, %r12
-            //
-            //             movq %r13, %rdx
-            //             mulxq $8, %rdx, %r11
-            //             adcxq %r8, %r14
-            //             adoxq %rdi, %r10
-            //             adcxq %r9, %r15
-            //             adoxq $3, %r12
-            //             adcxq $3, %r10
-            //
-            //             mulxq $4, %r8, %r9
-            //             mulxq $5, %rdi, %r11
-            //             adoxq %r8, %r13
-            //             adcxq %rdi, %r14
-            //             adoxq %r9, %r14
-            //             adcxq %r11, %r15
-            //
-            //             mulxq $6, %r8, %r9
-            //             mulxq $7, %rdi, %r11
-            //             adoxq %r8, %r15
-            //             adcxq %rdi, %r10
-            //             adoxq %r9, %r10
-            //             adcxq %r11, %r12
-            //             adoxq $3, %r12
-            //
-            //             movq 8($1), %rdx
-            //             mulxq 0($2), %r8, %r9
-            //             mulxq 8($2), %rdi, %r11
-            //             adcxq %r8, %r14
-            //             adoxq %r9, %r15
-            //             adcxq %rdi, %r15
-            //             adoxq %r11, %r10
-            //
-            //             mulxq 16($2), %r8, %r9
-            //             mulxq 24($2), %rdi, %r13
-            //             adcxq %r8, %r10
-            //             adoxq %rdi, %r12
-            //             adcxq %r9, %r12
-            //             adoxq $3, %r13
-            //             adcxq $3, %r13
-            //
-            //             movq %r14, %rdx
-            //             mulxq $8, %rdx, %r8
-            //             mulxq $4, %r8, %r9
-            //             mulxq $5, %rdi, %r11
-            //             adoxq %r8, %r14
-            //             adcxq %rdi, %r15
-            //             adoxq %r9, %r15
-            //             adcxq %r11, %r10
-            //
-            //             mulxq $6, %r8, %r9
-            //             mulxq $7, %rdi, %r11
-            //             adoxq %r8, %r10
-            //             adcxq %r9, %r12
-            //             adoxq %rdi, %r12
-            //             adcxq %r11, %r13
-            //             adoxq $3, %r13
-            //
-            //             movq 16($1), %rdx
-            //             mulxq 0($2), %r8, %r9
-            //             mulxq 8($2), %rdi, %r11
-            //             adcxq %r8, %r15
-            //             adoxq %r9, %r10
-            //             adcxq %rdi, %r10
-            //             adoxq %r11, %r12
-            //
-            //             mulxq 16($2), %r8, %r9
-            //             mulxq 24($2), %rdi, %r14
-            //             adcxq %r8, %r12
-            //             adoxq %r9, %r13
-            //             adcxq %rdi, %r13
-            //             adoxq $3, %r14
-            //             adcxq $3, %r14
-            //
-            //             movq %r15, %rdx
-            //             mulxq $8, %rdx, %r8
-            //             mulxq $4, %r8, %r9
-            //             mulxq $5, %rdi, %r11
-            //             adoxq %r8, %r15
-            //             adcxq %r9, %r10
-            //             adoxq %rdi, %r10
-            //             adcxq %r11, %r12
-            //
-            //             mulxq $6, %r8, %r9
-            //             mulxq $7, %rdi, %r11
-            //             adoxq %r8, %r12
-            //             adcxq %r9, %r13
-            //             adoxq %rdi, %r13
-            //             adcxq %r11, %r14
-            //             adoxq $3, %r14
-            //
-            //             movq 24($1), %rdx
-            //             mulxq 0($2), %r8, %r9
-            //             mulxq 8($2), %rdi, %r11
-            //             adcxq %r8, %r10
-            //             adoxq %r9, %r12
-            //             adcxq %rdi, %r12
-            //             adoxq %r11, %r13
-            //
-            //             mulxq 16($2), %r8, %r9
-            //             mulxq 24($2), %rdi, %r15
-            //             adcxq %r8, %r13
-            //             adoxq %r9, %r14
-            //             adcxq %rdi, %r14
-            //             adoxq $3, %r15
-            //             adcxq $3, %r15
-            //
-            //             movq %r10, %rdx
-            //             mulxq $8, %rdx, %r8
-            //             mulxq $4, %r8, %r9
-            //             mulxq $5, %rdi, %r11
-            //             adoxq %r8, %r10
-            //             adcxq %r9, %r12
-            //             adoxq %rdi, %r12
-            //             adcxq %r11, %r13
-            //
-            //             mulxq $6, %r8, %r9
-            //             mulxq $7, %rdi, %rdx
-            //             adoxq %r8, %r13
-            //             adcxq %r9, %r14
-            //             adoxq %rdi, %r14
-            //             adcxq %rdx, %r15
-            //             adoxq $3, %r15
-            //
-            //             movq %r12, 0($0)
-            //             movq %r13, 8($0)
-            //             movq %r14, 16($0)
-            //             movq %r15, 24($0)
-            //             "
-            //             :
-            //             : "r"(result.as_mut_ptr()),
-            //               "r"(&a), "r"(&b),
-            //               "m"(ZERO),
-            //               "m"(P::MODULUS.0[0]),
-            //               "m"(P::MODULUS.0[1]),
-            //               "m"(P::MODULUS.0[2]),
-            //               "m"(P::MODULUS.0[3]),
-            //               "m"(P::INV)
-            //             : "rdx", "rdi", "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "cc", "memory"
-            //         );
-            //     }
-            //     let r = unsafe { result.assume_init() };
-            //     r
-                // unsafe {
-                    // asm!("
-                    // xor $rax, $rax              // rax = CF = OF 0
-                    //
-                    // mulx 0($2), %rax, %rbx      // r[0] <- *x[0]
-                    //
-                    // // if i!=0:
-                    // adcx %rax, 0($1)            // r0 += lo + CF (carry in CF)
-                    // // else:
-                    // mov %rax, 0($1)
-                    //
-                    // mulx $8, $5, $6       // a * b0
-                    // adcx $5, $0           // r0 += lo + CF (carry in CF)
-                    // adox $6, $1           // r1 += hi + OF (carry in OF)
-                    //
-                    // mulx $9, $5, $6       // a * b1
-                    // adcx $5, $1           // r1 += lo + CF (carry in CF)
-                    // adox $6, $2           // r2 += hi + OF (carry in OF)
-                    //
-                    // mulx $10, $5, $6      // a * b2
-                    // adcx $5, $2           // r2 += lo + CF (carry in CF)
-                    // adox $6, $3           // r3 += hi + OF (carry in OF)
-                    //
-                    // mulx $11, $5, $6      // a * b3
-                    // adcx $5, $3           // r3 += lo + CF (carry in CF)
-                    // adcx $4, $4           // r4 += CF (no carry, CF = 0)
-                    // adox $6, $4           // r4 += hi + OF (no carry, OF = 0)
-                    // "
-                    // :
-                    // : "{rdx}"(a), "r"(r.as_mut_ptr()), "rm"(x),
-                    // : "rax", "rbx", "rdx", "cc", "memory",
-                    // )
-                // }
-                // r
-            };
+            let mul_asm = generate_asm_mul!($limbs);
 
             // No-carry optimisation applied to CIOS
             if no_carry {
@@ -818,46 +463,22 @@ macro_rules! impl_field_mul_assign {
                 if $limbs == 4 {
                     r = mul_asm((self.0).0, (other.0).0);
                 } else {
-
-                for i in 0..$limbs {
-                    // no_carry_inner_loop_asm_1(r, (other.0).0[i], (self.0).0);
-                    // no_carry_inner_loop_asm_2(r, r[0].wrapping_mul(P::INV), P::MODULUS.0);
-                    let mut carry1 = 0;
-                    for j in 0..$limbs {
-                        r[j] = fa::mac_with_carry(r[j], (self.0).0[j], (other.0).0[i], &mut carry1);
+                    for i in 0..$limbs {
+                        let mut carry1 = 0;
+                        for j in 0..$limbs {
+                            r[j] = fa::mac_with_carry(r[j], (self.0).0[j], (other.0).0[i], &mut carry1);
+                        }
+                        let mut carry2 = 0;
+                        let k = r[0].wrapping_mul(P::INV);
+                        fa::mac_discard(r[0], k, P::MODULUS.0[0], &mut carry2);
+                        for j in 1..$limbs {
+                            r[j - 1] = fa::mac_with_carry(r[j], k, P::MODULUS.0[j], &mut carry2);
+                        }
+                        r[$limbs - 1] = carry1 + carry2;
                     }
-                    let mut carry2 = 0;
-                    let k = r[0].wrapping_mul(P::INV);
-                    fa::mac_discard(r[0], k, P::MODULUS.0[0], &mut carry2);
-                    for j in 1..$limbs {
-                        r[j - 1] = fa::mac_with_carry(r[j], k, P::MODULUS.0[j], &mut carry2);
-                    }
-                    r[$limbs - 1] = carry1 + carry2;
                 }
-            }
                 (self.0).0 = r;
                 self.reduce();
-
-                // let mut r = [0u64; $limbs];
-                // let mut carry1 = 0u64;
-                // let mut carry2 = 0u64;
-                //
-                // for i in 0..$limbs {
-                //     // no_carry_inner_loop_asm(r, (other.0).0[i], P::INV, (self.0).0, P::MODULUS.0);
-                //
-                //     r[0] = fa::mac(r[0], (self.0).0[0], (other.0).0[i], &mut carry1);
-                //     let k = r[0].wrapping_mul(P::INV);
-                //     fa::mac_discard(r[0], k, P::MODULUS.0[0], &mut carry2);
-                //
-                //     for j in 1..$limbs {
-                //         r[j] = fa::mac_with_carry(r[j], (self.0).0[j], (other.0).0[i], &mut carry1);
-                //         r[j - 1] = fa::mac_with_carry(r[j], k, P::MODULUS.0[j], &mut carry2);
-                //     }
-                //     r[$limbs - 1] = carry1 + carry2;
-                // }
-                // (self.0).0 = r;
-                // self.reduce();
-            // Alternative implementation
             } else {
                 let mut r = [0u64; $limbs * 2];
                 for i in 0..$limbs {

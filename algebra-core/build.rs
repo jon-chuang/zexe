@@ -15,7 +15,6 @@ fn main() {
         macro_string
     ).unwrap();
 
-    println!("cargo:rerun-if-changed=src/fields/assembly_string_gen.rs");
     println!("cargo:rerun-if-changed=build.rs");
 }
 
@@ -25,62 +24,75 @@ fn main() {
 fn generate_asm_mul_string (limbs: usize) -> String {
     let mut asm_string = String::from("");
     for i in 0..limbs {
+        // First inner loop
         if i == 0 {
-            asm_string = format!("{}{}", asm_string,
-                            "\"
+            asm_string = format!("{}{}", asm_string,"\"
+                            movq 0($1), %rdx
+                            movq $5, %rcx
                             xorq %rdi, %rdi
-                                mulxq 0($2), %r8, %r9
-                                mulxq 8($2), %rax, %r10
-                                adcxq %rax, %r9
-                                mulxq 16($2), %rax, %r11
-                                adcxq %rax, %r10
-                                mulxq 24($2), %rax, %rdi
-                                adcxq %rax, %r11
-                                adcxq $4, %rdi               // %rdi is carry1");
+                                mulxq 0($2), %r8, %r9");
+            for j in 1..limbs-1 {
+                asm_string = format!("{}{}", asm_string, format!("
+                                mulxq {}($2), %rcx, %r{}
+                                adcxq %rcx, %r{}",
+                                j*8, 8+j+1, 8+j));
+            }
+            asm_string = format!("{}{}", asm_string, format!("
+                                mulxq {}($2), %rcx, %rdi
+                                adcxq %rcx, %r{}
+                                adcxq $4, %rdi               // %rdi is carry1",
+                                (limbs-1)*8, 8+limbs));
         } else {
             asm_string = format!("{}{}", asm_string, format!("
                             movq {}($1), %rdx", i * 8));
             for j in 0..limbs-1 {
-                let temp_inner = format!("
-                                mulxq {}($2), %rax, %rbx
-                                adcxq %rax, %r{}
-                                adoxq %rbx, %r{}",
-                                ((j+i+1) % limbs) * 8,
-                                8 + ((j+i+1) % limbs),
-                                8 + ((j+i+2) % limbs));
-                asm_string = format!("{}{}", asm_string, temp_inner);
-            }
-            asm_string = format!("{}{}", asm_string,"
-                                adoxq %rbx, %rdi");
-        }
-        asm_string = format!("{}{}", asm_string, format!("
-                            movq $5, %rdx
-                            mulxq %r{}, %rdx, %rax            // wrapping_mul", 8+i));
-        asm_string = format!("{}{}", asm_string, format!("
-                                mulxq 0($3), %rax, %rbx
-                                adcxq %r{}, %rax              // put junk in rax
-                                adoxq %rbx, %r{}",
-                                8 + ((i+1) % limbs),
-                                8 + ((i+2) % limbs)));
-        for j in 1..limbs {
-            let temp_inner = format!("
-                                mulxq {}($3), %rax, %rbx
-                                adcxq %rax, %r{}
+                asm_string = format!("{}{}", asm_string, format!("
+                                mulxq {}($2), %rcx, %rbx
+                                adcxq %rcx, %r{}
                                 adoxq %rbx, %r{}",
                                 j * 8,
                                 8 + ((j+i+1) % limbs),
-                                8 + ((j+i+2) % limbs));
-            asm_string = format!("{}{}", asm_string, temp_inner);
+                                8 + ((j+i+2) % limbs)));
+            }
+            asm_string = format!("{}{}", asm_string, format!("
+                                mulxq {}($2), %rcx, %rdi
+                                adcxq %rcx, %r{}
+                                adcxq $4, %rdi
+                                adoxq $4, %rdi",
+                                (limbs-1) * 8,
+                                8 + (i % limbs)));
+        }
+        // Second inner loop
+        asm_string = format!("{}{}", asm_string, format!("
+                            movq $5, %rdx
+                            mulxq %r{}, %rdx, %rcx            // wrapping_mul", 8+i));
+        asm_string = format!("{}{}", asm_string, format!("
+                                mulxq 0($3), %rcx, %rbx
+                                adcxq %r{}, %rcx              // put junk in rax
+                                adoxq %rbx, %r{}",
+                                8 + ((i+1) % limbs),
+                                8 + ((i+2) % limbs)));
+        for j in 1..limbs-1 {
+            asm_string = format!("{}{}", asm_string, format!("
+                                mulxq {}($3), %rcx, %rbx
+                                adcxq %rcx, %r{}
+                                adoxq %rbx, %r{}",
+                                j * 8,
+                                8 + ((j+i+1) % limbs),
+                                8 + ((j+i+2) % limbs)));
         }
         asm_string = format!("{}{}", asm_string, format!("
-                            adcxq %rbx, %r{}
-                            adoxq %rdi, %r{}",
-                            8 + ((i+limbs-1) % limbs),
-                            8 + ((i+limbs-1) % limbs)));
+                                mulxq {}($3), %rcx, %r{2}
+                                adcxq %rcx, %r{}
+                                adcxq $4, %r{2}
+                                adoxq %rdi, %r{2}",
+                                (limbs-1)*8,
+                                8 + ((i+limbs-1) % limbs),
+                                8 + (i % limbs)));
     }
     for i in 0..limbs {
         asm_string = format!("{}{}", asm_string, format!("
-                            movq %r{}, {}($0)", 8+((i+limbs-1) % limbs), i*8));
+                            movq %r{}, {}($0)", 8+(i % limbs), i*8));
     }
     format!("{}{}",asm_string, "\"")
 }
@@ -118,13 +130,14 @@ fn generate_macro_string (max_limbs:usize) -> std::string::String {
                             //   \"m\"(modulus[3]),
                             //   \"m\"(inverse)
                             // : \"rdx\", \"rdi\", \"r8\", \"r9\", \"r10\", \"r11\", \"r12\", \"r13\", \"r14\", \"r15\", \"cc\", \"memory\"
-                            : \"=r\"(result.as_mut_ptr())               // $0
-                            : \"r\"(&a),                                // $1
+                            :
+                            : \"r\"(result.as_mut_ptr())               // $0
+                              \"r\"(&a),                                // $1
                               \"r\"(&b),                                // $2
                               \"r\"(&modulus),                          // $3
                               \"m\"(ZERO),                              // $4
-                              \"m\"(inverse)                            // $5
-                            : \"rax\", \"rbx\", \"rdx\", \"rdi\", {} \"cc\", \"memory\"
+                              \"r\"(inverse)                            // $5
+                            : \"rcx\", \"rbx\", \"rdx\", \"rdi\", {} \"cc\", \"memory\"
                         );
                     }}
                     let r = unsafe {{ result.assume_init() }};
@@ -151,12 +164,10 @@ const ASM_STR:&'static str = "
                             // <https://github.com/AztecProtocol/barretenberg/blob/master/src/barretenberg/fields/asm_macros.hpp>
                             movq 0($1), %rdx
                             xorq %r8, %r8
-
                             mulxq 0($2), %r13, %r14
                             mulxq 8($2), %r8, %r9
                             mulxq 16($2), %r15, %r10
                             mulxq 24($2), %rdi, %r12
-
                             movq %r13, %rdx
                             mulxq $8, %rdx, %r11
                             adcxq %r8, %r14
@@ -164,14 +175,12 @@ const ASM_STR:&'static str = "
                             adcxq %r9, %r15
                             adoxq $3, %r12
                             adcxq $3, %r10
-
                             mulxq $4, %r8, %r9
                             mulxq $5, %rdi, %r11
                             adoxq %r8, %r13
                             adcxq %rdi, %r14
                             adoxq %r9, %r14
                             adcxq %r11, %r15
-
                             mulxq $6, %r8, %r9
                             mulxq $7, %rdi, %r11
                             adoxq %r8, %r15
@@ -179,7 +188,6 @@ const ASM_STR:&'static str = "
                             adoxq %r9, %r10
                             adcxq %r11, %r12
                             adoxq $3, %r12
-
                             movq 8($1), %rdx
                             mulxq 0($2), %r8, %r9
                             mulxq 8($2), %rdi, %r11
@@ -187,7 +195,6 @@ const ASM_STR:&'static str = "
                             adoxq %r9, %r15
                             adcxq %rdi, %r15
                             adoxq %r11, %r10
-
                             mulxq 16($2), %r8, %r9
                             mulxq 24($2), %rdi, %r13
                             adcxq %r8, %r10
@@ -195,7 +202,6 @@ const ASM_STR:&'static str = "
                             adcxq %r9, %r12
                             adoxq $3, %r13
                             adcxq $3, %r13
-
                             movq %r14, %rdx
                             mulxq $8, %rdx, %r8
                             mulxq $4, %r8, %r9
@@ -204,7 +210,6 @@ const ASM_STR:&'static str = "
                             adcxq %rdi, %r15
                             adoxq %r9, %r15
                             adcxq %r11, %r10
-
                             mulxq $6, %r8, %r9
                             mulxq $7, %rdi, %r11
                             adoxq %r8, %r10
@@ -212,7 +217,6 @@ const ASM_STR:&'static str = "
                             adoxq %rdi, %r12
                             adcxq %r11, %r13
                             adoxq $3, %r13
-
                             movq 16($1), %rdx
                             mulxq 0($2), %r8, %r9
                             mulxq 8($2), %rdi, %r11
@@ -220,7 +224,6 @@ const ASM_STR:&'static str = "
                             adoxq %r9, %r10
                             adcxq %rdi, %r10
                             adoxq %r11, %r12
-
                             mulxq 16($2), %r8, %r9
                             mulxq 24($2), %rdi, %r14
                             adcxq %r8, %r12
@@ -228,7 +231,6 @@ const ASM_STR:&'static str = "
                             adcxq %rdi, %r13
                             adoxq $3, %r14
                             adcxq $3, %r14
-
                             movq %r15, %rdx
                             mulxq $8, %rdx, %r8
                             mulxq $4, %r8, %r9
@@ -237,7 +239,6 @@ const ASM_STR:&'static str = "
                             adcxq %r9, %r10
                             adoxq %rdi, %r10
                             adcxq %r11, %r12
-
                             mulxq $6, %r8, %r9
                             mulxq $7, %rdi, %r11
                             adoxq %r8, %r12
@@ -245,7 +246,6 @@ const ASM_STR:&'static str = "
                             adoxq %rdi, %r13
                             adcxq %r11, %r14
                             adoxq $3, %r14
-
                             movq 24($1), %rdx
                             mulxq 0($2), %r8, %r9
                             mulxq 8($2), %rdi, %r11
@@ -253,7 +253,6 @@ const ASM_STR:&'static str = "
                             adoxq %r9, %r12
                             adcxq %rdi, %r12
                             adoxq %r11, %r13
-
                             mulxq 16($2), %r8, %r9
                             mulxq 24($2), %rdi, %r15
                             adcxq %r8, %r13
@@ -261,7 +260,6 @@ const ASM_STR:&'static str = "
                             adcxq %rdi, %r14
                             adoxq $3, %r15
                             adcxq $3, %r15
-
                             movq %r10, %rdx
                             mulxq $8, %rdx, %r8
                             mulxq $4, %r8, %r9
@@ -270,7 +268,6 @@ const ASM_STR:&'static str = "
                             adcxq %r9, %r12
                             adoxq %rdi, %r12
                             adcxq %r11, %r13
-
                             mulxq $6, %r8, %r9
                             mulxq $7, %rdi, %rdx
                             adoxq %r8, %r13
@@ -278,7 +275,6 @@ const ASM_STR:&'static str = "
                             adoxq %rdi, %r14
                             adcxq %rdx, %r15
                             adoxq $3, %r15
-
                             movq %r12, 0($0)
                             movq %r13, 8($0)
                             movq %r14, 16($0)

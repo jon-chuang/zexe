@@ -2,11 +2,13 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+const MAX_LIMBS: usize = 8;
+
 fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("assembly.rs");
 
-    let macro_string = generate_macro_string(25);
+    let macro_string = generate_macro_string(MAX_LIMBS);
 
     fs::write(
         &dest_path,
@@ -17,71 +19,71 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 }
 
-// fn generate_asm_string (limbs: usize) -> &'static str {
-//     const wrap = 8 * limbs;
-//
-//     let asm_string ="";
-//     for i in 0..limbs {
-//         if i == 0 {
-//             asm_string = format!("{}{}", asm_string,
-//                 "
-//                 movq 0($1), %rdx
-//                 xorq $4, $4
-//
-//                 mulxq 0($2), 8($0), 16($0)
-//                 mulxq 8($2), %rax, 24($0)
-//                 adcxq %rax, 16($0)
-//                 mulxq 16($2), %rax, 0($0)
-//                 adcxq %rax, 24($0)
-//                 mulxq 24($2), %rax, %rdi
-//                 adcxq %rax, 0($0)
-//                 adcxq $4, %rdi                 // %rdi is carry1
-//                 "
-//             );
-//         } else {
-//             let mut temp = ""
-//             for j in 0..limbs-1 {
-//                 temp_inner = format!(
-//                     "
-//                     mulxq 0($2), %rax, %rbx
-//                     adcxq %rax, 16($0)
-//                     adoxq %rbx, 24($0)
-//                     ", , , );
-//                 temp = format!("{}{}", temp, temp_inner);
-//             }
-//             temp = format!("{}{}", temp, "
-//                 adoxq %rbx, %rdi
-//             ");
-//         }
-//         let mut temp = format!("
-//             movq $5, %rdx
-//             mulq {}($0), %rdx               // wrapping_mul
-//             ",
-//         );
-//
-//         let mut temp = "
-//         mulxq 0($3), %rax, %rbx
-//         adcxq 8($0), %rax              // put junk in rax
-//         adoxq %rbx, 16($0)
-//         ";
-//         for j in 1..$limbs {
-//             temp_inner = format!("
-//                 mulxq {}($3), %rax, %rbx
-//                 adcxq %rax, {}($0)
-//                 adoxq %rbx, {}($0)
-//                 ", (j+i)*8 % wrap, (j+i+1)*8 % wrap, (j+i+2)*8 % wrap
-//             );
-//             temp = format!("{}{}", temp, temp_inner);
-//         }
-//         temp = format!("{}{}", temp, "
-//             adcxq %rbx, 8($0)
-//             adoxq %rdi, 8($0)
-//             "
-//         );
-//         asm_string = format!(asm_string, temp);
-//     }
-//     asm_string
-// }
+// For now, generated code only works for up to  8/10 limbss
+// In the future, we can try to implement data movement to and from an address
+// for higher number of limbs
+fn generate_asm_mul_string (limbs: usize) -> String {
+    let mut asm_string = String::from("");
+    for i in 0..limbs {
+        if i == 0 {
+            asm_string = format!("{}{}", asm_string,
+                            "\"
+                            xorq %rdi, %rdi
+                                mulxq 0($2), %r8, %r9
+                                mulxq 8($2), %rax, %r10
+                                adcxq %rax, %r9
+                                mulxq 16($2), %rax, %r11
+                                adcxq %rax, %r10
+                                mulxq 24($2), %rax, %rdi
+                                adcxq %rax, %r11
+                                adcxq $4, %rdi               // %rdi is carry1");
+        } else {
+            asm_string = format!("{}{}", asm_string, format!("
+                            movq {}($1), %rdx", i * 8));
+            for j in 0..limbs-1 {
+                let temp_inner = format!("
+                                mulxq {}($2), %rax, %rbx
+                                adcxq %rax, %r{}
+                                adoxq %rbx, %r{}",
+                                ((j+i+1) % limbs) * 8,
+                                8 + ((j+i+1) % limbs),
+                                8 + ((j+i+2) % limbs));
+                asm_string = format!("{}{}", asm_string, temp_inner);
+            }
+            asm_string = format!("{}{}", asm_string,"
+                                adoxq %rbx, %rdi");
+        }
+        asm_string = format!("{}{}", asm_string, format!("
+                            movq $5, %rdx
+                            mulxq %r{}, %rdx, %rax            // wrapping_mul", 8+i));
+        asm_string = format!("{}{}", asm_string, format!("
+                                mulxq 0($3), %rax, %rbx
+                                adcxq %r{}, %rax              // put junk in rax
+                                adoxq %rbx, %r{}",
+                                8 + ((i+1) % limbs),
+                                8 + ((i+2) % limbs)));
+        for j in 1..limbs {
+            let temp_inner = format!("
+                                mulxq {}($3), %rax, %rbx
+                                adcxq %rax, %r{}
+                                adoxq %rbx, %r{}",
+                                j * 8,
+                                8 + ((j+i+1) % limbs),
+                                8 + ((j+i+2) % limbs));
+            asm_string = format!("{}{}", asm_string, temp_inner);
+        }
+        asm_string = format!("{}{}", asm_string, format!("
+                            adcxq %rbx, %r{}
+                            adoxq %rdi, %r{}",
+                            8 + ((i+limbs-1) % limbs),
+                            8 + ((i+limbs-1) % limbs)));
+    }
+    for i in 0..limbs {
+        asm_string = format!("{}{}", asm_string, format!("
+                            movq %r{}, {}($0)", 8+((i+limbs-1) % limbs), i*8));
+    }
+    format!("{}{}",asm_string, "\"")
+}
 
 fn generate_macro_string (max_limbs:usize) -> std::string::String {
     let mut macro_string = String::from(
@@ -96,38 +98,44 @@ fn generate_macro_string (max_limbs:usize) -> std::string::String {
                 let result = match $limbs {
     ");
     for i in 2..(max_limbs+1) {
+        let mut rs = String::from("");
+        for k in 0..i {
+            rs = format!("{}{}", rs, format!("\"r{}\", ", 8+k));
+        }
         let limb_specialisation = format!(
     "           {} => {{
                     const ZERO: u64 = 0;
                     let mut result = MaybeUninit::<[u64; $limbs]>::uninit();
                     unsafe {{
                         asm!({}
-                            :
-                            : \"r\"(result.as_mut_ptr()),
-                              \"r\"(&a), \"r\"(&b),
-                              \"m\"(ZERO),
-                              \"m\"(modulus[0]),
-                              \"m\"(modulus[1]),
-                              \"m\"(modulus[2]),
-                              \"m\"(modulus[3]),
-                              \"m\"(inverse)
-                            : \"rdx\", \"rdi\", \"r8\", \"r9\", \"r10\", \"r11\", \"r12\", \"r13\", \"r14\", \"r15\", \"cc\", \"memory\"
+                            // :
                             // : \"r\"(result.as_mut_ptr()),
-                            //   \"r\"(&a), \"r\"(&b), \"r\"(&modulus),
+                            //   \"r\"(&a), \"r\"(&b),
                             //   \"m\"(ZERO),
+                            //   \"m\"(modulus[0]),
+                            //   \"m\"(modulus[1]),
+                            //   \"m\"(modulus[2]),
+                            //   \"m\"(modulus[3]),
                             //   \"m\"(inverse)
-                            // : \"rax\", \"rbx\", \"rdx\", \"rds\", \"rdi\", \"cc\", \"memory\"
+                            // : \"rdx\", \"rdi\", \"r8\", \"r9\", \"r10\", \"r11\", \"r12\", \"r13\", \"r14\", \"r15\", \"cc\", \"memory\"
+                            : \"=r\"(result.as_mut_ptr())               // $0
+                            : \"r\"(&a),                                // $1
+                              \"r\"(&b),                                // $2
+                              \"r\"(&modulus),                          // $3
+                              \"m\"(ZERO),                              // $4
+                              \"m\"(inverse)                            // $5
+                            : \"rax\", \"rbx\", \"rdx\", \"rdi\", {} \"cc\", \"memory\"
                         );
                     }}
                     let r = unsafe {{ result.assume_init() }};
                     r
                 }},
 
-    ", i, asm_string);//generate_asm_string(i));
+    ", i, generate_asm_mul_string(i), rs);//ASM_STR);//
         macro_string = format!("{}{}", macro_string, limb_specialisation);
     }
     macro_string = format!("{}{}", macro_string,
-            "_ => [0u64; $limbs]
+            "x => panic!(\"asm_mul (no-carry): number of limbs supported is 2 up to 8. You had {}\", x)
             };
             result
         };
@@ -137,7 +145,7 @@ fn generate_macro_string (max_limbs:usize) -> std::string::String {
 }
 
 
-const asm_string:&'static str = "
+const ASM_STR:&'static str = "
                             \"
                             // Assembly from Aztec's Barretenberg implementation, see
                             // <https://github.com/AztecProtocol/barretenberg/blob/master/src/barretenberg/fields/asm_macros.hpp>

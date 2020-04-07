@@ -459,7 +459,7 @@ macro_rules! impl_field_mul_assign {
             // No-carry optimisation applied to CIOS
             if no_carry {
                 let mut r = [0u64; $limbs];
-                if $limbs == 4 {
+                if $limbs  == 4 {// <= 8 {//
                     r = mul_asm((self.0).0, (other.0).0, P::MODULUS.0, P::INV);
                 } else {
                     for i in 0..$limbs {
@@ -517,7 +517,6 @@ macro_rules! impl_field_into_repr {
             for i in 0..$limbs {
                 let k = r[i].wrapping_mul(P::INV);
                 let mut carry = 0;
-
                 fa::mac_with_carry(r[i], k, P::MODULUS.0[0], &mut carry);
                 for j in 1..$limbs {
                     r[(j+i)%$limbs] = fa::mac_with_carry(r[(j+i)%$limbs], k, P::MODULUS.0[j], &mut carry);
@@ -536,7 +535,6 @@ macro_rules! impl_field_square_in_place {
         #[unroll_for_loops]
         fn square_in_place(&mut self) -> &mut Self {
             let mut r = [0u64; $limbs*2];
-
             let mut carry = 0;
             for i in 0..$limbs {
                 if i < $limbs-1 {
@@ -547,7 +545,6 @@ macro_rules! impl_field_square_in_place {
                     carry = 0;
                 }
             }
-
             r[$limbs*2-1] = r[$limbs*2-2] >> 63;
             for i in 0..$limbs { r[$limbs*2-2-i] = (r[$limbs*2-2-i] << 1) | (r[$limbs*2-3-i] >> 63); }
             for i in 3..$limbs { r[$limbs+1-i] = (r[$limbs+1-i] << 1) | (r[$limbs-i] >> 63); }

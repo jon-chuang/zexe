@@ -28,6 +28,10 @@ fn generate_asm_mul_string (limbs: usize) -> String {
         if i == 0 {
             asm_string = format!("{}{}", asm_string,"\"
                             movq 0($1), %rdx
+<<<<<<< HEAD
+=======
+                            movq $5, %rcx
+>>>>>>> bca9ab44194e88a03f01bf07706a2689eff1878b
                             xorq %rdi, %rdi
                                 mulxq 0($2), %r8, %r9");
             for j in 1..limbs-1 {
